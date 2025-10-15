@@ -1,0 +1,6 @@
+{ "vcenter": 
+	{
+		"vcenterhost" : "vcenter.avery.local",
+		"vcenteradmin" : "avery-adm@avery.local"
+	}
+}
