@@ -2,7 +2,7 @@ from pyVim.connect import SmartConnect
 import getpass
 import ssl
 import json
-
+from pyVmomi import vim
 #fetching logon informaiton
 with open("vcenterConf.json",'r') as rawConfig:
 	jsonConfig = rawConfig.read()
@@ -19,7 +19,7 @@ sessionInfo = si.content.sessionManager.currentSession
 datacenter = si.content.rootFolder.childEntity[0]
 vms = datacenter.vmFolder.childEntity
 
-def getVMs(vmname):
+def getVMs(vmname=""):
 	response = []
 	if vmname == "":
 		for vm in vms:
@@ -48,6 +48,47 @@ def getVM(): #Gets a single VM
                 vm = vmList[0]
                 inputLoopCon = False
                 return vm
+
+def changeNetwork(vm,device):
+    availableNets = []
+    networks = datacenter.network
+    for network in networks:
+        availableNets.append(network.name)
+
+    loopCon = True
+    while loopCon:
+        print("\nAvailable networks:")
+        for i in availableNets:
+            print(i)
+        targetNetworkName = input("\nNew network name:")
+        if targetNetworkName not in availableNets:
+            print("Selected network does not exist please choose one that does.")
+        else:
+            loopCon = False
+            break
+    for network in networks:
+        if targetNetworkName == network.name:
+            targetNetwork = network
+        else:
+            continue
+
+    nicspec = vim.vm.device.VirtualDeviceSpec()
+    nicspec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
+    nicspec.device = device
+    nicspec.device.backing = vim.vm.device.VirtualEthernetCard.NetworkBackingInfo()
+    nicspec.device.backing.network = targetNetwork
+    nicspec.device.backing.deviceName = targetNetwork.name
+    nicspec.device.connectable = vim.vm.device.VirtualDevice.ConnectInfo()
+    nicspec.device.connectable.startConnected = True
+    nicspec.device.connectable.allowGuestControl = True
+
+    device_Change = []
+    device_Change.append(nicspec)
+    configSpec = vim.vm.ConfigSpec(deviceChange=device_Change)
+    vm.ReconfigVM_Task(configSpec)
+    print("VM network reconfigured")
+
+
 
 #Menu Structure and execution
 operation = True
@@ -133,14 +174,48 @@ while operation:
                     break
             else:
                 print("Please enter an integer from 1-5")
+        config = vim.vm.ConfigSpec()
+        config.numCPUs = newCpuCount
+        vm.ReconfigVM_Task(spec=config)
     elif choice == "7": #Clone VM
-        print("stuff")
+        vm = getVM()
+        vmnames = []
+        for vm2 in getVMs():
+            vmnames.append(vm2.name)
+        
+        loopCon = True
+        while loopCon :
+            cloneName = input("Enter a name for your clone: ")
+            if cloneName == "":
+                print("Please Enter a name for the clone")
+            elif cloneName in vmnames:
+                print("VM name taken. Please enter a new name.")
+            else:
+                loopCon = False
+                break
+        relospec = vim.vm.RelocateSpec()
+        relospec.pool = vm.resourcePool
+
+        clone_spec =  vim.vm.CloneSpec()
+        clone_spec.location = relospec
+        clone_spec.powerOn = True   
+        vm.CloneVM_Task(folder=vm.parent,name=cloneName,spec=clone_spec)
     elif choice == "8": #Restore the latest snapshot
         vm = getVM()
         vm.RevertToCurrentSnapshot_Task()
         print("Reverted to current snapshot")
     elif choice == "9": #Change Network
-        print("stuff")
+        vm = getVM()
+        count = 0
+        for device in vm.config.hardware.device:
+            if isinstance(device, vim.vm.device.VirtualEthernetCard):
+                print("\nadapter name:", device.deviceInfo.label)
+                print("Current network:", device.deviceInfo.summary)
+                changeNetwork(vm,device)
+        print("All networks reconfigured")
+
+                
+
     else:
     	print("Please enter a number between 1 and 4")
 
